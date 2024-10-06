@@ -9,7 +9,7 @@ module Crimson::Commands
         alias will set that as the available version on the system (meaning it will
         switch the Crystal and Shards executables). Specifying a period "." will swap
         the current version with the default version then switch to it. Specifying the
-        '--delete' flag will make the current version unavilable on the system.
+        '--delete' flag will make the current version unavailable on the system.
         DESC
 
       add_alias "use"
@@ -19,7 +19,7 @@ module Crimson::Commands
       add_usage "switch --delete"
 
       add_argument "target", description: "the version or version alias to switch to"
-      add_option 'd', "delete", description: "remove this as"
+      add_option 'd', "delete", description: "remove the version as current"
     end
 
     def run(arguments : Cling::Arguments, options : Cling::Options) : Nil

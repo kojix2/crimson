@@ -2,31 +2,28 @@ module Crimson::Commands
   class Install < Base
     def setup : Nil
       @name = "install"
-      @summary = "install a version of crystal"
+      @summary = "install a version of Crystal"
       @description = <<-DESC
         Installs a version of Crystal. If no version is specified, the latest available
-        version is selected. Available versions are cached on your system but can be
-        fetched from the Crystal API by specifying the '--fetch' option.
+        version is selected. Versions are cached on the system but will be fetched from
+        the GitHub API if a given version isn't cached or no version is specified.
         DESC
 
       add_alias "in"
-      add_usage "install [-a|--alias <name>] [-f|--fetch] [-s|--switch] [version]"
+      add_usage "install [-a|--alias <name>] [-d|--default] [-s|--switch] [version]"
 
       add_argument "version", description: "the version to install"
       add_option 'a', "alias", description: "set the alias of the version", type: :single
       add_option 'd', "default", description: "set the version as default"
-      add_option 'f', "fetch", description: "fetch versions from the api"
       add_option 's', "switch", description: "switch the available version on the system"
-      add_option "debug"
     end
 
     def run(arguments : Cling::Arguments, options : Cling::Options) : Nil
       config = Config.load
 
-      version = arguments.get?("version").try &.as_s
-      unless version
-        verbose { "fetching available versions" }
-        version = ENV.get_available_versions(options.has?("fetch"))[0]
+      unless version = arguments.get?("version").try &.as_s
+        puts "Fetching available versions"
+        version = ENV.fetch_versions[0].to_s
       end
 
       if ENV.installed? version
@@ -35,7 +32,7 @@ module Crimson::Commands
         fatal "To use it run '#{command}'"
       end
 
-      unless ENV.get_available_versions(false).includes? version
+      unless ENV.available_versions.includes? version
         fatal "Unknown Crystal version: #{version}"
       end
 
@@ -60,22 +57,11 @@ module Crimson::Commands
         exit 1
       end
 
-      path = ENV::LIBRARY_CRYSTAL / version
+      Dir.mkdir_p path = ENV::LIBRARY_CRYSTAL / version
       puts "Installing Crystal version: #{version}"
-      verbose { "ensuring directory: #{path}" }
 
-      begin
-        Dir.mkdir_p path
-      rescue ex : File::Error
-        error "Failed to create directory:"
-        error "Location: #{path}"
-        error ex.to_s
-        exit_program
-      end
-
-      verbose { "creating destination file" }
       archive = File.open path / "crystal-#{version}-#{ENV::TARGET_IDENTIFIER}", mode: "w"
-      verbose { "location: #{archive.path}" }
+      verbose { "Location: #{archive.path}" }
 
       source = "https://github.com/crystal-lang/crystal/releases/download/" \
                "#{version}/crystal-#{version}-#{ENV::TARGET_IDENTIFIER}"
@@ -90,7 +76,7 @@ module Crimson::Commands
 
       puts "Unpacking archive to destination..."
       begin
-        ENV.decompress path, archive.path, options.has? "debug"
+        ENV.decompress path, archive.path, options.has? "verbose"
       rescue ex
         FileUtils.rm_rf path
         on_error ex

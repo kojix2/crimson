@@ -1,90 +1,118 @@
 name: Nightly
 
 on:
+  push:
+    tags:
+      - nightly
+
   schedule:
-    - cron: 0 0 * * *
+    - cron: 0 7 * * 0
 
 permissions:
   actions: write
   contents: write
+
+env:
+  VERSION: 1.0.0
 
 jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Crystal
         uses: crystal-lang/install-crystal@v1
         with:
-          crystal: latest
+          crystal: nightly
 
       - name: Install Dependencies
         run: shards install --production
 
       - name: Compile Binaries
         run: |
-          crystal build src/main.cr -o crimson
-          tar -zcf crimson-nightly-linux-x86_64.tar.gz crimson
+          crystal build src/main.cr --debug -o crimson
+          tar -zcf crimson-${{ env.VERSION }}-nightly-linux-x86_64.tar.gz crimson
+
+      - name: Build Debian Package
+        run: |
+          RNAME=crimson_${{ env.VERSION }}-nightly-1_amd64
+          mkdir -p build/$RNAME/DEBIAN build/$RNAME/usr/bin
+
+          echo "Package: crimson
+          Version: ${{ env.VERSION }}-nightly
+          Maintainer: Devaune Whittle <https://github.com/devnote-dev>
+          Architecture: amd64
+          Homepage: https://github.com/crimson-crystal/crimson
+          Description: A Crystal Version Manager
+          " > build/$RNAME/DEBIAN/control
+
+          mv crimson build/$RNAME/usr/bin
+          dpkg --build build/$RNAME
+          mv build/$RNAME/usr/bin/crimson .
+          mv build/$RNAME.deb .
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: crimson
+          name: crimson-linux
           path: |
             crimson
-            crimson-nightly-linux-x86_64.tar.gz
+            crimson_${{ env.VERSION }}-nightly-1_amd64.deb
+            crimson-${{ env.VERSION }}-nightly-linux-x86_64.tar.gz
 
   windows:
     needs: linux
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Crystal
         uses: crystal-lang/install-crystal@v1
         with:
-          crystal: latest
+          crystal: nightly
 
       - name: Install Dependencies
         run: shards install --production
 
       - name: Compile Binaries
         run: |
-          crystal build src\main.cr -o crimson.exe
+          crystal build src\main.cr --debug -o crimson.exe
           $compress = @{
-            Path = "crimson.exe", "crimson.pdb"
-            DestinationPath = "crimson-nightly-windows-x86_64-msvc.zip"
+            Path = "crimson.exe", "crimson.pdb", "*.dll"
+            DestinationPath = "crimson-${{ env.VERSION }}-nightly-windows-x86_64-msvc.zip"
           }
           Compress-Archive @compress
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: crimson
+          name: crimson-windows
           path: |
             crimson.exe
             crimson.pdb
-            crimson-nightly-windows-x86_64-msvc.zip
+            crimson-${{ env.VERSION }}-nightly-windows-x86_64-msvc.zip
 
   release:
     needs: windows
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download Artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts/
+          pattern: crimson-*
+          merge-multiple: true
 
       - name: Prepare Artifacts
         run: |
-          mv artifacts/crimson/* .
-          sha256sum crimson crimson.exe crimson.pdb > checksums.txt
+          mv artifacts/* .
+          sha256sum crimson crimson.exe crimson.pdb crimson_${{ env.VERSION }}-nightly-1_amd64.deb > checksums.txt
 
       - name: Create Release
         env:
@@ -92,7 +120,8 @@ jobs:
 
         run: |
           gh release view nightly &>/dev/null && gh release delete nightly -y
-          gh release create nightly -pt Nightly --notes "Nightly release for $(date +%F)."
+          gh release create nightly -pt Nightly --notes "Nightly release for v${{ env.VERSION }} ($(date +%F))."
           gh release upload nightly checksums.txt
-          gh release upload nightly crimson-nightly-linux-x86_64.tar.gz
-          gh release upload nightly crimson-nightly-windows-x86_64-msvc.zip
+          gh release upload nightly crimson_${{ env.VERSION }}-nightly-1_amd64.deb
+          gh release upload nightly crimson-${{ env.VERSION }}-nightly-linux-x86_64.tar.gz
+          gh release upload nightly crimson-${{ env.VERSION }}-nightly-windows-x86_64-msvc.zip
